@@ -1,0 +1,382 @@
+// ============================================================
+// Coin Private: Premium Crypto Platform
+// Prisma schema: atomic wallet ledger, wallets, assets,
+// orders, transfers, approvals, promotions, risk & settings.
+// Default datasource: SQLite (works locally & in previews).
+// Persistent production storage requires a reviewed migration.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------- Identity -------------------------
+
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  loginId          String?  @unique // optional alias login for customers
+  name             String
+  passwordHash     String
+  role             String   @default("CUSTOMER") // CUSTOMER | ADMIN
+  status           String   @default("ACTIVE") // ACTIVE | FROZEN
+  phone            String?
+  address          String?
+  country          String?
+  avatarUrl        String?
+  kycStatus        String   @default("PENDING") // VERIFIED | PENDING | UNVERIFIED
+  kycTier          Int      @default(1) // 1 | 2 | 3: drives risk limits
+  twoFactorEnabled Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  wallets          Wallet[]
+  orders           Order[]
+  transfers        Transfer[]
+  deposits         DepositRequest[]
+  withdrawals      WithdrawalRequest[]
+  ledgerTxs        LedgerTransaction[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  securityEvents   SecurityEvent[]
+  watchlist        WatchlistItem[]
+  promoRedemptions PromoRedemption[]
+  resetCodes       ResetCode[]
+  approvals        Approval[]
+  welcomeMatch     WelcomeMatchProgress?
+}
+
+// ------------------------- Assets ---------------------------
+
+model Asset {
+  symbol     String  @id // BTC | ETH | SOL | USD | USDC ...
+  name       String
+  kind       String // CRYPTO | FIAT
+  color      String  @default("#8A8F98")
+  decimals   Int     @default(8)
+  network    String? // Bitcoin | Ethereum | Solana ...
+  depositTag Boolean @default(false) // requires memo/tag
+  priceUsd   Float   @default(0)
+  change24h  Float   @default(0)
+  status     String  @default("LISTED") // LISTED | DELISTED
+  tradeable  Boolean @default(true)
+  sortOrder  Int     @default(0)
+
+  wallets      Wallet[]
+  priceHistory PricePoint[]
+}
+
+// ------------------------- Wallets --------------------------
+
+model Wallet {
+  id          String @id @default(cuid())
+  userId      String
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetSymbol String
+  asset       Asset  @relation(fields: [assetSymbol], references: [symbol], onDelete: Restrict)
+  available   Float  @default(0) // spendable
+  reserved    Float  @default(0) // held by pending withdrawals / holds
+  address     String @unique // receive address (crypto) or account ref (fiat)
+  label       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  entries LedgerEntry[]
+
+  @@unique([userId, assetSymbol])
+}
+
+// --------------------- Atomic Ledger ------------------------
+// Every money movement creates one LedgerTransaction with one or more
+// LedgerEntry rows, all written inside a single Prisma
+// interactive transaction together with the wallet balance
+// updates. Balances are never mutated outside this flow.
+
+model LedgerTransaction {
+  id          String    @id @default(cuid())
+  reference   String    @unique // CP-TX-XXXXXX
+  type        String // BUY | SELL | CONVERT | DEPOSIT | WITHDRAWAL | SEND | RECEIVE | FEE | BONUS | ADJUSTMENT | REVERSAL
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  status      String    @default("POSTED") // PENDING | POSTED | DECLINED | FAILED | REVERSED
+  description String
+  meta        String?   @default("{}") // JSON payload
+  reversalOfId String?
+  postedAt    DateTime?
+  createdAt   DateTime  @default(now())
+
+  entries LedgerEntry[]
+}
+
+model LedgerEntry {
+  id             String             @id @default(cuid())
+  ledgerTxId     String
+  ledgerTx       LedgerTransaction  @relation(fields: [ledgerTxId], references: [id], onDelete: Cascade)
+  walletId       String?
+  wallet         Wallet?            @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  assetSymbol    String
+  direction      String // DEBIT | CREDIT
+  amount         Float
+  balanceBefore  Float
+  balanceAfter   Float
+  memo           String?
+  createdAt      DateTime           @default(now())
+}
+
+// ----------------------- Trading ----------------------------
+
+model Order {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reference        String   @unique
+  side             String // BUY | SELL | CONVERT
+  baseSymbol       String // asset being bought/sold
+  quoteSymbol      String   @default("USD") // asset used to pay/receive
+  sourceSymbol     String? // convert source
+  amountBase       Float
+  amountQuote      Float
+  price            Float // unit price at execution
+  fee              Float    @default(0)
+  feeSymbol        String   @default("USD")
+  promoCode        String?
+  status           String   @default("EXECUTED") // EXECUTED | FAILED
+  ledgerTxId       String?
+  createdAt        DateTime @default(now())
+
+  welcomeMatchTrade WelcomeMatchTrade?
+}
+
+// ----------------------- Transfers ---------------------------
+
+model Transfer {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reference   String   @unique
+  kind        String // SEND | INTERNAL
+  assetSymbol String
+  amount      Float
+  fee         Float    @default(0)
+  toAddress   String
+  toUserId    String?
+  txHash      String?
+  memo        String?
+  status      String   @default("POSTED") // POSTED | PENDING | FAILED
+  ledgerTxId  String?
+  createdAt   DateTime @default(now())
+}
+
+// -------------------- Deposits / Withdrawals -----------------
+
+model DepositRequest {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reference   String    @unique
+  assetSymbol String
+  amount      Float
+  method      String // BANK | CARD | CRYPTO
+  status      String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  note        String?
+  decidedBy   String?
+  decidedAt   DateTime?
+  ledgerTxId  String?
+  createdAt   DateTime  @default(now())
+}
+
+model WithdrawalRequest {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reference   String    @unique
+  assetSymbol String
+  amount      Float
+  fee         Float     @default(0)
+  address     String
+  status      String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  note        String?
+  decidedBy   String?
+  decidedAt   DateTime?
+  ledgerTxId  String?
+  createdAt   DateTime  @default(now())
+}
+
+// ----------------------- Approvals ---------------------------
+// Unified admin queue: deposits, withdrawals and risk-flagged
+// trades land here before any ledger movement happens.
+
+model Approval {
+  id           String    @id @default(cuid())
+  type         String // DEPOSIT | WITHDRAWAL | RISK_TRADE
+  reference    String
+  userId       String?
+  user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payload      String    @default("{}") // JSON snapshot
+  amount       Float     @default(0)
+  assetSymbol  String?
+  status       String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  requestedBy  String?
+  decidedBy    String?
+  decisionNote String?
+  createdAt    DateTime  @default(now())
+  decidedAt    DateTime?
+}
+
+// ---------------------- Promotions ---------------------------
+
+model Promo {
+  id             String    @id @default(cuid())
+  code           String    @unique
+  title          String
+  kind           String // FEE_DISCOUNT | BONUS_CREDIT
+  value          Float // percent (fee) or units (bonus)
+  bonusSymbol    String? // for BONUS_CREDIT, e.g. USDC
+  active         Boolean   @default(true)
+  startsAt       DateTime  @default(now())
+  endsAt         DateTime?
+  maxRedemptions Int       @default(0) // 0 = unlimited
+  usedCount      Int       @default(0)
+  createdAt      DateTime  @default(now())
+
+  redemptions PromoRedemption[]
+}
+
+model PromoRedemption {
+  id        String   @id @default(cuid())
+  promoId   String
+  promo     Promo    @relation(fields: [promoId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([promoId, userId])
+}
+
+// ---------------- First-week trading match ------------------
+
+model WelcomeMatchProgress {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status           String   @default("ELIGIBLE") // ELIGIBLE | ACTIVE | LOCKED | RELEASING | RELEASED | EXPIRED
+  windowEndsAt     DateTime
+  streakStartedDay String?
+  lastQualifiedDay String?
+  streakDays       Int      @default(0)
+  targetUsd        Float    @default(0)
+  bonusUsd         Float    @default(0)
+  unlockAt         DateTime?
+  awardedAt        DateTime?
+  releasedAt       DateTime?
+  awardLedgerTxId  String?
+  releaseLedgerTxId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  trades WelcomeMatchTrade[]
+}
+
+model WelcomeMatchTrade {
+  id          String               @id @default(cuid())
+  progressId  String
+  progress    WelcomeMatchProgress @relation(fields: [progressId], references: [id], onDelete: Cascade)
+  orderId     String               @unique
+  order       Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  tradeDay    String
+  notionalUsd Float
+  createdAt   DateTime             @default(now())
+
+  @@index([progressId, tradeDay])
+}
+
+// ---------------------- Notifications ------------------------
+
+model Notification {
+  id            String   @id @default(cuid())
+  recipientId   String? // customer notifications
+  recipientRole String? // ADMIN broadcast
+  user          User?    @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  type          String // TRADE | DEPOSIT | WITHDRAWAL | SEND | RECEIVE | SECURITY | SYSTEM | PROMO | ADMIN
+  title         String
+  body          String
+  read          Boolean  @default(false)
+  createdAt     DateTime @default(now())
+}
+
+// ------------------------ Audit ------------------------------
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  actor     String // email of actor
+  action    String // LOGIN | TRADE | DEPOSIT | ... | ADMIN_*
+  detail    String?
+  createdAt DateTime @default(now())
+}
+
+model SecurityEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String // LOGIN | LOGIN_FAILED | LOGOUT | PASSWORD_CHANGED | 2FA_TOGGLED | ACCOUNT_RECOVERED
+  ip        String?
+  userAgent String?
+  detail    String?
+  createdAt DateTime @default(now())
+}
+
+// ----------------------- Watchlist ---------------------------
+
+model WatchlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol    String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, symbol])
+}
+
+// ---------------------- Reset codes --------------------------
+
+model ResetCode {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code      String
+  email     String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// --------------------- Price history -------------------------
+
+model PricePoint {
+  id     String @id @default(cuid())
+  symbol String
+  asset  Asset  @relation(fields: [symbol], references: [symbol], onDelete: Cascade)
+  price  Float
+  ts     DateTime @default(now())
+
+  @@index([symbol, ts])
+}
+
+// ----------------------- Settings ----------------------------
+// Platform-wide configuration, editable from Admin → Settings.
+// Keys: platform.fees.maker, price.provider, price.refreshMs,
+// price.customUrl, risk.maxTradeUsd, risk.dailyWithdrawUsd,
+// platform.maintenance, platform.signups, ...
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
