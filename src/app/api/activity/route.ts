@@ -22,7 +22,7 @@ export const GET = handler(async (req: NextRequest) => {
     filter === 'all' || filter === 'withdrawals'
       ? db.withdrawalRequest.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: 60 })
       : Promise.resolve([]),
-    filter === 'ledger'
+    filter === 'all' || filter === 'ledger'
       ? db.ledgerTransaction.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: 100, include: { entries: true } })
       : Promise.resolve([]),
   ]);

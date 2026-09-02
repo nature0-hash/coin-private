@@ -62,6 +62,8 @@ type EditableRecord = {
   correctionNote?: string;
 };
 
+type ManagedWallet = DetailUser['wallets'][number];
+
 export function AdminUserDetailView() {
   const { adminParams, adminNavigate } = useUI();
   const id = adminParams.id ?? '';
@@ -75,6 +77,8 @@ export function AdminUserDetailView() {
   const [closeReason, setCloseReason] = useState('');
   const [record, setRecord] = useState<EditableRecord | null>(null);
   const [recordForm, setRecordForm] = useState({ sourceAddress: '', sourceReference: '', note: '', address: '', toAddress: '', memo: '', correctionNote: '', reason: '' });
+  const [walletToSet, setWalletToSet] = useState<ManagedWallet | null>(null);
+  const [walletForm, setWalletForm] = useState({ available: '', reserved: '', fundingSource: '', reason: '' });
   const [busy, setBusy] = useState(false);
 
   async function submitAdjust() {
@@ -184,6 +188,28 @@ export function AdminUserDetailView() {
       const result = await res.json();
       if (result.error) toast.error(result.error);
       else { toast.success('Account closed and sign-in disabled'); setCloseOpen(false); setCloseReason(''); reload(); }
+    } finally { setBusy(false); }
+  }
+
+  function openWalletBalance(wallet: ManagedWallet) {
+    setWalletToSet(wallet);
+    setWalletForm({ available: String(wallet.available), reserved: String(wallet.reserved), fundingSource: '', reason: '' });
+  }
+
+  async function setWalletBalance() {
+    if (!walletToSet) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/wallets/${walletToSet.id}/set-balance`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          available: Number(walletForm.available), reserved: Number(walletForm.reserved),
+          fundingSource: walletForm.fundingSource, reason: walletForm.reason,
+        }),
+      });
+      const result = await res.json();
+      if (result.error) toast.error(result.error);
+      else { toast.success(result.message); setWalletToSet(null); reload(); }
     } finally { setBusy(false); }
   }
 
@@ -312,7 +338,7 @@ export function AdminUserDetailView() {
         </div>
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {u.wallets.map((w) => (
-            <div key={w.id} className="cp-card p-4">
+            <button key={w.id} type="button" className="cp-card p-4 text-left hover:border-primary/45 hover:bg-primary/[0.025] transition-colors" onClick={() => openWalletBalance(w)}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <AssetIcon symbol={w.symbol} color={w.color} size={34} />
@@ -329,8 +355,8 @@ export function AdminUserDetailView() {
                   <div className="flex justify-between"><span className="text-muted-foreground">Reserved</span><span className="font-medium text-warn">{fmtCrypto(w.reserved, w.symbol, 6)}</span></div>
                 )}
               </div>
-              <p className="text-[10.5px] text-muted-foreground/70 nums mt-2 truncate" title={w.address}>{w.address}</p>
-            </div>
+              <div className="flex items-center justify-between gap-3 mt-2"><p className="text-[10.5px] text-muted-foreground/70 nums truncate" title={w.address}>{w.address}</p><span className="text-[10.5px] font-semibold text-primary whitespace-nowrap">Set balance</span></div>
+            </button>
           ))}
         </div>
       </div>
@@ -427,6 +453,26 @@ export function AdminUserDetailView() {
               )}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={walletToSet !== null} onOpenChange={(open) => { if (!open) setWalletToSet(null); }}>
+        <DialogContent className="max-w-[440px]">
+          {walletToSet && <>
+            <DialogHeader>
+              <DialogTitle>Set {walletToSet.symbol} wallet balance</DialogTitle>
+              <DialogDescription>Enter the exact amount you want this customer wallet to show. The difference updates immediately and is recorded in the customer&apos;s activity.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3.5 mt-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5"><Label className="text-[12.5px]">Available {walletToSet.symbol}</Label><Input className="h-10 bg-secondary/60 rounded-xl nums" type="number" min="0" step="any" value={walletForm.available} onChange={(e) => setWalletForm({ ...walletForm, available: e.target.value })} /></div>
+                <div className="space-y-1.5"><Label className="text-[12.5px]">Reserved {walletToSet.symbol}</Label><Input className="h-10 bg-secondary/60 rounded-xl nums" type="number" min="0" step="any" value={walletForm.reserved} onChange={(e) => setWalletForm({ ...walletForm, reserved: e.target.value })} /></div>
+              </div>
+              <div className="space-y-1.5"><Label className="text-[12.5px]">Credited by / source shown to customer</Label><Input className="h-10 bg-secondary/60 rounded-xl" value={walletForm.fundingSource} onChange={(e) => setWalletForm({ ...walletForm, fundingSource: e.target.value })} placeholder="e.g. Funding account or source address" /><p className="text-[11px] text-muted-foreground">This is shown as a Management-recorded source in the customer activity.</p></div>
+              <div className="space-y-1.5"><Label className="text-[12.5px]">Reason (required)</Label><Textarea className="bg-secondary/60 rounded-xl min-h-[76px]" value={walletForm.reason} onChange={(e) => setWalletForm({ ...walletForm, reason: e.target.value })} placeholder="Reason for setting this wallet balance" /></div>
+              <Button className="w-full h-10 rounded-xl font-semibold" disabled={busy || !Number.isFinite(Number(walletForm.available)) || !Number.isFinite(Number(walletForm.reserved)) || Number(walletForm.available) < 0 || Number(walletForm.reserved) < 0 || walletForm.reason.trim().length < 3} onClick={setWalletBalance}>{busy ? 'Updating…' : `Set ${walletToSet.symbol} balance`}</Button>
+            </div>
+          </>}
         </DialogContent>
       </Dialog>
 
