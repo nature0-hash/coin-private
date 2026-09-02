@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "test:welcome-match": "bun run scripts/check-welcome-match.ts",
     "db:push": "prisma db push",
+    "db:deploy": "prisma db push",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",

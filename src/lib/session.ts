@@ -15,7 +15,11 @@ function sessionSecret(): string {
   const configured = process.env.SESSION_SECRET;
   if (configured) return configured;
   if (process.env.NODE_ENV === 'production') {
-    throw new Error('SESSION_SECRET must be configured in production');
+    const databaseUrl = process.env.DATABASE_URL;
+    if (databaseUrl?.startsWith('postgres')) {
+      return crypto.createHash('sha256').update(`coin-private-session:${databaseUrl}`).digest('hex');
+    }
+    throw new Error('SESSION_SECRET or a PostgreSQL DATABASE_URL must be configured in production');
   }
   return 'coin-private-dev-secret-change-me';
 }

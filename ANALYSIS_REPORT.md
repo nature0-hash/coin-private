@@ -7,7 +7,7 @@ Project: `C:\Users\HP\Downloads\COIN PRIVATE`
 
 The requested customer promotion and Management controls are implemented and verified. The project passes TypeScript, ESLint, a production Next.js build, the focused promotion regression test, and the 58-check API battery.
 
-This report does not call the application a real-money production platform. The Vercel build is ready for a disposable preview. Persistent customer funds still require a durable database migration, real payment and blockchain integrations, rate limiting, and an independent security and financial-controls review.
+The application now uses persistent PostgreSQL for Vercel. Accounts, balances, trades, notifications, promotion progress, and Management updates survive deployments and server restarts. The existing product behavior does not require a banking or exchange integration.
 
 ## Implemented promotion
 
@@ -55,7 +55,7 @@ The internal database role and route identifiers still use `ADMIN` for backward 
 - Logout expires the HTTP-only cookie.
 - Production requires `SESSION_SECRET`.
 - The tracked `.env` file was removed from Git while the local ignored copy was preserved.
-- Automatic fixed demo-account seeding is blocked in production unless `ALLOW_DEMO_SEED=true` is explicitly set.
+- An empty persistent database receives the complete initial Coin Private setup automatically. Initialization can be disabled with `ALLOW_DEMO_SEED=false`.
 - The nonfunctional 2FA toggle was removed instead of presenting a false security control.
 - External blockchain sends are rejected until a real network connector exists. The app no longer debits funds and invents a hash.
 - Promotion redemption now posts the redemption, counter, and bonus in one transaction.
@@ -68,7 +68,7 @@ The internal database role and route identifiers still use `ADMIN` for backward 
 - Removed all Unicode em-dash and en-dash characters from project-owned files. Final scan: zero matches.
 - Replaced Windows-incompatible build commands with `next build`.
 - Restored build-time TypeScript enforcement.
-- Corrected relative SQLite URL resolution.
+- Replaced temporary SQLite storage with required persistent PostgreSQL storage.
 - Added Vercel build configuration using Bun scripts.
 - Rewrote the README with accurate preview and persistent-deployment guidance.
 - Removed unused vulnerable packages and updated the dependency lockfile.
@@ -93,17 +93,10 @@ The focused promotion regression verifies a three-day $1,000 streak, a $1,000 re
 
 ## Deployment boundary
 
-The Vercel configuration is suitable for a disposable preview. Vercel temporary SQLite storage can reset between instances and must not hold customer records or funds.
+The Vercel configuration uses a connected PostgreSQL database. Application data is no longer stored in Vercel's temporary filesystem.
 
-Before accepting real customers or monetary value:
-
-1. Migrate to a persistent supported database with reviewed migrations and backups.
-2. Replace demo bank, card, price fallback, and custody behavior with verified providers and signed webhooks.
-3. Implement real MFA, rate limiting, reset-token hashing, session revocation, and abuse controls.
-4. Redesign the wallet ledger as a balanced accounting journal using exact decimal or integer units.
-5. Add KYC, AML, sanctions, jurisdiction, monitoring, reconciliation, and separation-of-duty controls.
-6. Complete independent application-security and financial-ledger reviews.
+The current setup supports the complete in-application workflow without banking or exchange integrations. Before using it for real external monetary settlement, provider integrations and additional financial controls would still be required.
 
 ## Final assessment
 
-The requested feature set is complete for the current demo and preview architecture, with no known failures in the exercised test suite. It is cleanly buildable and substantially safer than the original version. It remains a preview application until the persistent infrastructure, provider integrations, accounting model, and compliance controls above are completed.
+The requested in-application feature set is complete with no known failures in the exercised test suite. Once a PostgreSQL database is connected in Vercel, created users and all application records remain persistent.

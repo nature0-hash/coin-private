@@ -2,8 +2,7 @@
 // Coin Private: Premium Crypto Platform
 // Prisma schema: atomic wallet ledger, wallets, assets,
 // orders, transfers, approvals, promotions, risk & settings.
-// Default datasource: SQLite (works locally & in previews).
-// Persistent production storage requires a reviewed migration.
+// Persistent datasource: PostgreSQL for local and Vercel deployments.
 // ============================================================
 
 generator client {
@@ -11,7 +10,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

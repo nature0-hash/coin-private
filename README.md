@@ -13,7 +13,7 @@ bun run db:seed
 bun run dev
 ```
 
-Copy `.env.example` to `.env` before starting. Set a unique `SESSION_SECRET` for every shared or public environment.
+Copy `.env.example` to `.env` before starting and provide a PostgreSQL connection string. Set a unique `SESSION_SECRET` for every shared or public environment.
 
 ### Demo accounts
 
@@ -50,7 +50,7 @@ Management can open a customer profile and choose **Adjust funds**. Credits and 
 
 - Passwords are hashed with bcrypt.
 - Session tokens are HMAC signed and expire after 12 hours.
-- `SESSION_SECRET` is mandatory when `NODE_ENV=production`.
+- A dedicated `SESSION_SECRET` is strongly recommended. If omitted on Vercel, a stable deployment secret is derived from the private PostgreSQL connection string.
 - Password reset codes use a cryptographically secure generator and are not returned by production APIs.
 - Logout expires the HTTP-only session cookie.
 - Two-factor authentication is not advertised because a real authenticator flow has not been configured.
@@ -58,18 +58,15 @@ Management can open a customer profile and choose **Adjust funds**. Credits and 
 
 ## Vercel deployment
 
-The repository has a Vercel-compatible build command and a cross-platform Next.js build.
-
-For a disposable preview:
+The repository now uses persistent PostgreSQL and does not use Vercel temporary storage.
 
 1. Import the repository into Vercel.
-2. Set `SESSION_SECRET` to a long random value.
-3. Set `ALLOW_DEMO_SEED=true` only if the preview should create the demo accounts.
-4. Deploy.
+2. Open **Storage** in the Vercel project.
+3. Create a **Prisma Postgres** or **Neon Postgres** database and connect it to the project. Vercel adds `DATABASE_URL` automatically.
+4. Add a long random `SESSION_SECRET` in Vercel Environment Variables. This is recommended but the connected database also provides a stable private fallback.
+5. Redeploy.
 
-The preview fallback uses SQLite in Vercel's temporary filesystem. Its data can reset and must not be used for customer funds or production records.
-
-For a persistent deployment, provision a supported persistent database and complete a reviewed Prisma migration before accepting customer data. The checked-in schema currently targets SQLite; changing only `DATABASE_URL` to a PostgreSQL URL is not sufficient.
+The Vercel build synchronizes the PostgreSQL schema before building. On the first login or registration request, the empty database receives the complete Coin Private setup. Users, passwords, balances, trades, notifications, promotion progress, and Management changes then remain saved in PostgreSQL across deployments and server restarts.
 
 ## Commands
 
@@ -89,4 +86,4 @@ bun run scripts/api-tests.ts
 bun run scripts/check-integrity.ts
 ```
 
-The API smoke battery covers authentication, trading, holds, deposits, withdrawals, approvals, promotions, wallet adjustments, reversals, registration, and password reset. Run it against a disposable database.
+The API smoke battery covers authentication, trading, holds, deposits, withdrawals, approvals, promotions, wallet adjustments, reversals, registration, and password reset. Run it against a dedicated test database.

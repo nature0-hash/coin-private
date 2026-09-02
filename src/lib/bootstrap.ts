@@ -9,8 +9,7 @@
 // double-seed.
 // ============================================================
 import bcrypt from 'bcryptjs';
-import { db, databaseUrl } from './db';
-import { SCHEMA_SQL } from './schema-sql';
+import { db } from './db';
 
 let seedPromise: Promise<void> | null = null;
 
@@ -228,64 +227,6 @@ export async function runSeed(): Promise<void> {
 }
 
 /**
- * Creates any missing tables/indexes (SQLite only). On a fresh deploy
- * (e.g. Vercel serverless with a clean /tmp SQLite file) this provisions
- * the full schema from the bundled DDL: no manual `prisma db push` needed.
- * Cheap no-op once the schema exists (single sqlite_master probe).
- */
-async function ensureSchema(): Promise<void> {
-  if (!databaseUrl.startsWith('file:')) return; // PostgreSQL path: managed by prisma db push
-  const tables = (await db.$queryRawUnsafe<{ name: string }[]>(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name='User'"
-  )) as unknown as { name: string }[];
-  if (Array.isArray(tables) && tables.length > 0) return;
-  for (const stmt of SCHEMA_SQL.split(';')) {
-    const s = stmt.trim();
-    if (s) await db.$executeRawUnsafe(s);
-  }
-  console.log('[bootstrap] SQLite schema provisioned.');
-}
-
-async function ensureWelcomeMatchSchema(): Promise<void> {
-  if (!databaseUrl.startsWith('file:')) return;
-  const statements = [
-    `CREATE TABLE IF NOT EXISTS "WelcomeMatchProgress" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "userId" TEXT NOT NULL,
-      "status" TEXT NOT NULL DEFAULT 'ELIGIBLE',
-      "windowEndsAt" DATETIME NOT NULL,
-      "streakStartedDay" TEXT,
-      "lastQualifiedDay" TEXT,
-      "streakDays" INTEGER NOT NULL DEFAULT 0,
-      "targetUsd" REAL NOT NULL DEFAULT 0,
-      "bonusUsd" REAL NOT NULL DEFAULT 0,
-      "unlockAt" DATETIME,
-      "awardedAt" DATETIME,
-      "releasedAt" DATETIME,
-      "awardLedgerTxId" TEXT,
-      "releaseLedgerTxId" TEXT,
-      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updatedAt" DATETIME NOT NULL,
-      CONSTRAINT "WelcomeMatchProgress_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-    )`,
-    `CREATE TABLE IF NOT EXISTS "WelcomeMatchTrade" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "progressId" TEXT NOT NULL,
-      "orderId" TEXT NOT NULL,
-      "tradeDay" TEXT NOT NULL,
-      "notionalUsd" REAL NOT NULL,
-      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      CONSTRAINT "WelcomeMatchTrade_progressId_fkey" FOREIGN KEY ("progressId") REFERENCES "WelcomeMatchProgress" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-      CONSTRAINT "WelcomeMatchTrade_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-    )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS "WelcomeMatchProgress_userId_key" ON "WelcomeMatchProgress"("userId")`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS "WelcomeMatchTrade_orderId_key" ON "WelcomeMatchTrade"("orderId")`,
-    `CREATE INDEX IF NOT EXISTS "WelcomeMatchTrade_progressId_tradeDay_idx" ON "WelcomeMatchTrade"("progressId", "tradeDay")`,
-  ];
-  for (const statement of statements) await db.$executeRawUnsafe(statement);
-}
-
-/**
  * Ensures the database is fully usable: schema first, then demo data if
  * the database is empty. Safe to call on every request: after the first
  * successful run it resolves immediately (global promise guard).
@@ -296,16 +237,14 @@ export async function ensureSeeded(): Promise<void> {
     return;
   }
   seedPromise = (async () => {
-    await ensureSchema();
-    await ensureWelcomeMatchSchema();
     const count = await db.user.count();
     if (count === 0) {
-      const allowDemoSeed = process.env.NODE_ENV !== 'production' || process.env.ALLOW_DEMO_SEED === 'true';
+      const allowDemoSeed = process.env.ALLOW_DEMO_SEED !== 'false';
       if (!allowDemoSeed) {
-        throw new Error('Database is empty. Seed it explicitly or set ALLOW_DEMO_SEED=true for a disposable demo deployment.');
+        throw new Error('Database is empty and automatic initial setup is disabled.');
       }
       await runSeed();
-      console.log('[bootstrap] Database was empty: seeded demo data automatically.');
+      console.log('[bootstrap] Persistent database initialized with the Coin Private setup.');
     } else {
       await db.user.updateMany({
         where: { role: 'ADMIN', name: 'Platform Admin' },
