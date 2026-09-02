@@ -7,6 +7,7 @@
 // ============================================================
 import { useState } from 'react';
 import { useFetch } from '@/hooks/use-cp-data';
+import { useUI } from '@/lib/store';
 import { SkeletonBlock, StatusPill, EmptyState } from '@/components/cp/primitives';
 import { fmtDateTime, fmtCrypto } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -17,28 +18,33 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import { Search, Undo2, Eye } from 'lucide-react';
+import { Search, Undo2, Eye, Pencil, ArrowLeft } from 'lucide-react';
 
 interface LedgerTxRow {
   id: string; reference: string; type: string; status: string;
   description: string; userName?: string; userEmail?: string;
   entries: Array<{ id: string; direction: string; assetSymbol: string; amount: number; balanceBefore: number; balanceAfter: number; memo: string | null }>;
-  createdAt: string;
+  createdAt: string; meta: string;
 }
 
 const TYPES = ['ALL', 'BUY', 'SELL', 'CONVERT', 'DEPOSIT', 'WITHDRAWAL', 'SEND', 'BONUS', 'ADJUSTMENT', 'REVERSAL'];
 
 export function AdminTransactionsView() {
+  const { adminParams, adminNavigate } = useUI();
+  const userId = adminParams.userId ?? '';
   const [type, setType] = useState('ALL');
   const [status, setStatus] = useState('ALL');
   const [q, setQ] = useState('');
   const { data, loading, reload } = useFetch<{ transactions: LedgerTxRow[] }>(
-    `/api/admin/transactions?type=${type === 'ALL' ? '' : type}&status=${status === 'ALL' ? '' : status}&q=${encodeURIComponent(q)}`,
-    [type, status, q]
+    `/api/admin/transactions?type=${type === 'ALL' ? '' : type}&status=${status === 'ALL' ? '' : status}&q=${encodeURIComponent(q)}&userId=${encodeURIComponent(userId)}`,
+    [type, status, q, userId]
   );
   const [selected, setSelected] = useState<LedgerTxRow | null>(null);
   const [reverseOpen, setReverseOpen] = useState(false);
   const [reason, setReason] = useState('');
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [correctionNote, setCorrectionNote] = useState('');
+  const [correctionReason, setCorrectionReason] = useState('');
   const [busy, setBusy] = useState(false);
 
   async function submitReverse() {
@@ -64,6 +70,27 @@ export function AdminTransactionsView() {
     }
   }
 
+  async function submitCorrection() {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/records/LEDGER/${selected.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ correctionNote, reason: correctionReason }),
+      });
+      const d = await res.json();
+      if (d.error) toast.error(d.error);
+      else {
+        toast.success(d.message);
+        setCorrectionOpen(false);
+        setCorrectionNote('');
+        setCorrectionReason('');
+        setSelected(null);
+        reload();
+      }
+    } finally { setBusy(false); }
+  }
+
   return (
     <div className="space-y-5">
       <div>
@@ -72,6 +99,13 @@ export function AdminTransactionsView() {
           Every ledger transaction with its balanced entries. Reversals post mirrored entries: balances are never edited in place.
         </p>
       </div>
+
+      {userId && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-3.5 py-2.5 text-[12.5px]">
+          <span>Showing only this customer&apos;s ledger transactions.</span>
+          <Button variant="ghost" size="sm" className="h-7 rounded-lg gap-1 text-[12px]" onClick={() => adminNavigate('user-detail', { id: userId })}><ArrowLeft className="w-3.5 h-3.5" /> Customer profile</Button>
+        </div>
+      )}
 
       {/* filters */}
       <div className="flex flex-col md:flex-row gap-2.5">
@@ -138,6 +172,9 @@ export function AdminTransactionsView() {
                             <Undo2 className="w-3.5 h-3.5" /> Reverse
                           </Button>
                         )}
+                        <Button variant="ghost" size="sm" className="h-8 rounded-lg gap-1.5 text-[12px]" onClick={() => { setSelected(t); setCorrectionOpen(true); }}>
+                          <Pencil className="w-3.5 h-3.5" /> Correct
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -149,7 +186,7 @@ export function AdminTransactionsView() {
       )}
 
       {/* entries dialog */}
-      <Dialog open={selected !== null && !reverseOpen} onOpenChange={(o) => !o && setSelected(null)}>
+      <Dialog open={selected !== null && !reverseOpen && !correctionOpen} onOpenChange={(o) => !o && setSelected(null)}>
         <DialogContent className="max-w-[480px]">
           {selected && (
             <>
@@ -174,6 +211,7 @@ export function AdminTransactionsView() {
                   </div>
                 ))}
               </div>
+              {ledgerCorrections(selected.meta).map((c, index) => <p key={`${c.at}-${index}`} className="text-[11px] rounded-lg bg-primary/5 border border-primary/15 p-2.5 mt-2"><span className="font-semibold">Correction note:</span> {c.note} <span className="text-muted-foreground">({c.at})</span></p>)}
               <p className="text-[11px] text-muted-foreground mt-2">Wallet updates and ledger entries are committed in one transaction.</p>
             </>
           )}
@@ -200,6 +238,29 @@ export function AdminTransactionsView() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={correctionOpen} onOpenChange={setCorrectionOpen}>
+        <DialogContent className="max-w-[430px]">
+          <DialogHeader>
+            <DialogTitle>Correct {selected?.reference}</DialogTitle>
+            <DialogDescription>Adds a visible, audited correction note. It does not alter amounts, balances, dates or ledger entries.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 mt-1">
+            <div className="space-y-1.5"><Label className="text-[12.5px]">Correction note</Label><Textarea className="bg-secondary/60 rounded-xl min-h-[80px]" value={correctionNote} onChange={(e) => setCorrectionNote(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label className="text-[12.5px]">Reason (required, audited)</Label><Textarea className="bg-secondary/60 rounded-xl min-h-[80px]" value={correctionReason} onChange={(e) => setCorrectionReason(e.target.value)} /></div>
+            <Button className="w-full h-10 rounded-xl font-semibold" disabled={busy || correctionNote.trim().length < 3 || correctionReason.trim().length < 3} onClick={submitCorrection}>{busy ? 'Saving…' : 'Save correction note'}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+function ledgerCorrections(meta: string): Array<{ note: string; at: string }> {
+  try {
+    const parsed = JSON.parse(meta) as { corrections?: Array<{ note?: string; at?: string }> };
+    return Array.isArray(parsed.corrections)
+      ? parsed.corrections.filter((item): item is { note: string; at: string } => typeof item?.note === 'string' && typeof item?.at === 'string')
+      : [];
+  } catch { return []; }
 }

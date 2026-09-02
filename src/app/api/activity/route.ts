@@ -82,14 +82,21 @@ export const GET = handler(async (req: NextRequest) => {
     });
   }
   for (const l of ledgerTxs) {
+    let corrections: Array<{ note: string; reason: string; at: string }> = [];
+    try {
+      const parsed = JSON.parse(l.meta ?? '{}') as { corrections?: Array<{ note?: string; reason?: string; at?: string }> };
+      corrections = Array.isArray(parsed.corrections)
+        ? parsed.corrections.filter((item): item is { note: string; reason: string; at: string } => typeof item?.note === 'string' && typeof item?.reason === 'string' && typeof item?.at === 'string')
+        : [];
+    } catch { /* legacy/malformed metadata has no corrections */ }
     items.push({
       id: `ldg-${l.id}`, kind: 'LEDGER', reference: l.reference,
       title: `Ledger · ${l.type}`,
-      subtitle: `${l.entries.length} entr${l.entries.length === 1 ? 'y' : 'ies'} · ${l.description}`,
+      subtitle: `${l.entries.length} entr${l.entries.length === 1 ? 'y' : 'ies'} · ${l.description}${corrections.length ? ' · correction noted' : ''}`,
       amount: l.entries[0]?.amount ?? 0, symbol: l.entries[0]?.assetSymbol ?? 'USD',
       status: l.status === 'POSTED' ? 'COMPLETED' : l.status, type: l.type,
       createdAt: l.createdAt.toISOString(),
-      meta: { entries: l.entries.map((e) => ({ direction: e.direction, amount: e.amount, symbol: e.assetSymbol, before: e.balanceBefore, after: e.balanceAfter })) },
+      meta: { entries: l.entries.map((e) => ({ direction: e.direction, amount: e.amount, symbol: e.assetSymbol, before: e.balanceBefore, after: e.balanceAfter })), corrections },
     });
   }
 

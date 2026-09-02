@@ -36,7 +36,7 @@ export function tokenFrom(req: NextRequest): string | null {
 export async function auth(req: NextRequest): Promise<AuthUser | null> {
   const user = await getCurrentUserFromToken(tokenFrom(req));
   if (!user) return null;
-  if (user.status === 'FROZEN' && !req.nextUrl.pathname.startsWith('/api/auth')) return null;
+  if (user.status !== 'ACTIVE' && !req.nextUrl.pathname.startsWith('/api/auth')) return null;
   return user as unknown as AuthUser;
 }
 

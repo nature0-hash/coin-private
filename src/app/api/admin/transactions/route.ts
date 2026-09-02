@@ -7,6 +7,7 @@ export const GET = handler(async (req: NextRequest) => {
   const url = new URL(req.url);
   const type = url.searchParams.get('type') ?? '';
   const status = url.searchParams.get('status') ?? '';
+  const userId = url.searchParams.get('userId') ?? '';
   const q = (url.searchParams.get('q') ?? '').trim().toLowerCase();
 
   const txs = await db.ledgerTransaction.findMany({
@@ -14,6 +15,7 @@ export const GET = handler(async (req: NextRequest) => {
       AND: [
         type ? { type } : {},
         status ? { status } : {},
+        userId ? { userId } : {},
         q ? { OR: [{ reference: { contains: q } }, { description: { contains: q } }] } : {},
       ],
     },

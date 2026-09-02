@@ -22,6 +22,8 @@ export const POST = handler(async (req: NextRequest) => {
     return fail('Invalid credentials', 401);
   }
   if (user.status === 'FROZEN') return fail('Account frozen: contact support', 403);
+  if (user.status === 'CLOSED') return fail('Account closed: contact support', 403);
+  if (user.status !== 'ACTIVE') return fail('Account is not active: contact support', 403);
 
   const valid = await verifyPassword(password, user.passwordHash);
   if (!valid) {

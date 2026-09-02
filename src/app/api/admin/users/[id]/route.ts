@@ -16,7 +16,7 @@ export const GET = handler<Ctx>(async (req: NextRequest, ctx) => {
   });
   if (!user) return ok({ error: 'User not found' }, { status: 404 });
 
-  const [orders, transfers, deposits, withdrawals, ledgerTxs, securityEvents, redemptions, welcomeMatch] = await Promise.all([
+  const [orders, transfers, deposits, withdrawals, ledgerTxs, securityEvents, redemptions, welcomeMatch, transactionEdits] = await Promise.all([
     db.order.findMany({ where: { userId: id }, orderBy: { createdAt: 'desc' }, take: 25 }),
     db.transfer.findMany({ where: { userId: id }, orderBy: { createdAt: 'desc' }, take: 25 }),
     db.depositRequest.findMany({ where: { userId: id }, orderBy: { createdAt: 'desc' }, take: 25 }),
@@ -25,6 +25,7 @@ export const GET = handler<Ctx>(async (req: NextRequest, ctx) => {
     db.securityEvent.findMany({ where: { userId: id }, orderBy: { createdAt: 'desc' }, take: 20 }),
     db.promoRedemption.findMany({ where: { userId: id }, include: { promo: true } }),
     getWelcomeMatchSnapshot(id),
+    db.transactionEditLog.findMany({ where: { userId: id }, orderBy: { createdAt: 'desc' }, take: 30 }),
   ]);
 
   const snap = await getPriceSnapshot();
@@ -43,7 +44,7 @@ export const GET = handler<Ctx>(async (req: NextRequest, ctx) => {
   return ok({
     user: { ...safeUser, wallets },
     orders, transfers, deposits, withdrawals,
-    ledgerTxs, securityEvents,
+    ledgerTxs, securityEvents, transactionEdits,
     promos: redemptions.map((r) => ({ code: r.promo.code, title: r.promo.title, redeemedAt: r.createdAt })),
     welcomeMatch,
   });

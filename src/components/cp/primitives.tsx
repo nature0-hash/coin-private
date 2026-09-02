@@ -162,6 +162,7 @@ const STATUS_MAP: Record<string, { label: string; cls: string }> = {
   FAILED: { label: 'Failed', cls: 'text-destructive bg-destructive/10' },
   REVERSED: { label: 'Reversed', cls: 'text-destructive bg-destructive/10' },
   FROZEN: { label: 'Frozen', cls: 'text-destructive bg-destructive/10' },
+  CLOSED: { label: 'Closed', cls: 'text-muted-foreground bg-muted' },
   DECLINED: { label: 'Declined', cls: 'text-destructive bg-destructive/10' },
 };
 

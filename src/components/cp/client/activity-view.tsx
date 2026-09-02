@@ -24,7 +24,7 @@ interface ActivityItem {
   status: string;
   type: string;
   createdAt: string;
-  meta?: { fee?: number; txHash?: string; memo?: string; entries?: Array<{ direction: string; amount: number; symbol: string; before: number; after: number }> };
+  meta?: { fee?: number; txHash?: string; memo?: string; entries?: Array<{ direction: string; amount: number; symbol: string; before: number; after: number }>; corrections?: Array<{ note: string; reason: string; at: string }> };
 }
 
 const FILTERS = [
@@ -145,6 +145,19 @@ export function ActivityView() {
                         <span className="text-muted-foreground nums">
                           {fmtCrypto(e.before, e.symbol, 4)} → {fmtCrypto(e.after, e.symbol, 4)}
                         </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {selected.meta?.corrections && selected.meta.corrections.length > 0 && (
+                <div className="mt-3">
+                  <p className="micro-label mb-2">Correction notes</p>
+                  <div className="space-y-2">
+                    {selected.meta.corrections.map((correction, i) => (
+                      <div key={`${correction.at}-${i}`} className="rounded-xl border border-primary/15 bg-primary/5 p-3 text-[12px]">
+                        <p className="font-medium">{correction.note}</p>
+                        <p className="text-muted-foreground mt-1">Reason: {correction.reason} · {fmtDateTime(correction.at)}</p>
                       </div>
                     ))}
                   </div>
