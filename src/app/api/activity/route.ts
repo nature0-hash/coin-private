@@ -83,20 +83,26 @@ export const GET = handler(async (req: NextRequest) => {
   }
   for (const l of ledgerTxs) {
     let corrections: Array<{ note: string; reason: string; at: string }> = [];
+    let customerLabel = '';
+    let fundingSource = '';
     try {
-      const parsed = JSON.parse(l.meta ?? '{}') as { corrections?: Array<{ note?: string; reason?: string; at?: string }> };
+      const parsed = JSON.parse(l.meta ?? '{}') as { corrections?: Array<{ note?: string; reason?: string; at?: string }>; customerLabel?: string; fundingSource?: string | null };
       corrections = Array.isArray(parsed.corrections)
         ? parsed.corrections.filter((item): item is { note: string; reason: string; at: string } => typeof item?.note === 'string' && typeof item?.reason === 'string' && typeof item?.at === 'string')
         : [];
+      customerLabel = typeof parsed.customerLabel === 'string' ? parsed.customerLabel : '';
+      fundingSource = typeof parsed.fundingSource === 'string' ? parsed.fundingSource : '';
     } catch { /* legacy/malformed metadata has no corrections */ }
+    const activityTitle = ledgerActivityTitle(l.type, l.entries, customerLabel);
+    const adjustmentSubtitle = `${l.entries.length} entr${l.entries.length === 1 ? 'y' : 'ies'}${fundingSource ? ` · Source: ${fundingSource}` : ''}`;
     items.push({
       id: `ldg-${l.id}`, kind: 'LEDGER', reference: l.reference,
-      title: `Ledger · ${l.type}`,
-      subtitle: `${l.entries.length} entr${l.entries.length === 1 ? 'y' : 'ies'} · ${l.description}${corrections.length ? ' · correction noted' : ''}`,
+      title: activityTitle,
+      subtitle: `${l.type === 'ADJUSTMENT' ? adjustmentSubtitle : `${l.entries.length} entr${l.entries.length === 1 ? 'y' : 'ies'} · ${l.description}`}${corrections.length ? ' · correction noted' : ''}`,
       amount: l.entries[0]?.amount ?? 0, symbol: l.entries[0]?.assetSymbol ?? 'USD',
       status: l.status === 'POSTED' ? 'COMPLETED' : l.status, type: l.type,
       createdAt: l.createdAt.toISOString(),
-      meta: { entries: l.entries.map((e) => ({ direction: e.direction, amount: e.amount, symbol: e.assetSymbol, before: e.balanceBefore, after: e.balanceAfter })), corrections },
+      meta: { entries: l.entries.map((e) => ({ direction: e.direction, amount: e.amount, symbol: e.assetSymbol, before: e.balanceBefore, after: e.balanceAfter })), corrections, fundingSource },
     });
   }
 
@@ -105,3 +111,22 @@ export const GET = handler(async (req: NextRequest) => {
 });
 
 export const runtime = 'nodejs';
+
+function ledgerActivityTitle(type: string, entries: Array<{ direction: string; assetSymbol: string }>, requestedLabel: string): string {
+  const symbol = entries.find((entry) => entry.direction === 'CREDIT')?.assetSymbol ?? entries[0]?.assetSymbol ?? '';
+  const labelMap: Record<string, string> = {
+    RECEIVED: 'Received', WALLET_CREDIT: 'Wallet credit', BONUS_CREDIT: 'Bonus credit',
+    WALLET_DEBIT: 'Wallet debit', SERVICE_FEE: 'Service fee', WALLET_BALANCE_UPDATED: 'Wallet balance updated',
+  };
+  if (labelMap[requestedLabel]) return `${labelMap[requestedLabel]}${symbol ? ` ${symbol}` : ''}`;
+  if (type === 'ADJUSTMENT') {
+    const hasCredit = entries.some((entry) => entry.direction === 'CREDIT');
+    return `${hasCredit ? 'Received' : 'Wallet debit'}${symbol ? ` ${symbol}` : ''}`;
+  }
+  if (type === 'DEPOSIT' || type === 'RECEIVE') return `Received${symbol ? ` ${symbol}` : ''}`;
+  if (type === 'WITHDRAWAL' || type === 'SEND') return `Sent${symbol ? ` ${symbol}` : ''}`;
+  if (type === 'BUY') return `Bought${symbol ? ` ${symbol}` : ''}`;
+  if (type === 'SELL') return `Sold${symbol ? ` ${symbol}` : ''}`;
+  if (type === 'CONVERT') return `Converted to ${symbol}`;
+  return `Transaction${symbol ? ` · ${symbol}` : ''}`;
+}

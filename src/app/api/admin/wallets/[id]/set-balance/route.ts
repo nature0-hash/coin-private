@@ -33,6 +33,12 @@ export const POST = handler<Ctx>(async (req: NextRequest, ctx) => {
   const availableDelta = round8(targetAvailable - wallet.available);
   const reservedDelta = round8(targetReserved - wallet.reserved);
   if (Math.abs(availableDelta) < 1e-9 && Math.abs(reservedDelta) < 1e-9) return ok({ error: 'The wallet already has those balances' }, { status: 422 });
+  const deltas = [availableDelta, reservedDelta].filter((delta) => Math.abs(delta) >= 1e-9);
+  const customerLabel = deltas.every((delta) => delta > 0)
+    ? 'RECEIVED'
+    : deltas.every((delta) => delta < 0)
+      ? 'WALLET_DEBIT'
+      : 'WALLET_BALANCE_UPDATED';
 
   const lines = [] as Array<{ walletId: string; direction: 'DEBIT' | 'CREDIT'; amount: number; memo: string; from?: 'available' | 'reserved'; to?: 'available' | 'reserved' }>;
   if (Math.abs(availableDelta) >= 1e-9) {
@@ -54,22 +60,22 @@ export const POST = handler<Ctx>(async (req: NextRequest, ctx) => {
     });
   }
 
-  const sourceText = fundingSource ? ` Received from: ${fundingSource}.` : '';
+  const sourceText = fundingSource ? ` Source: ${fundingSource}.` : '';
   const result = await postLedger({
     type: 'ADJUSTMENT',
     userId: wallet.userId,
     reference: genReference('SET'),
-    description: `Wallet balance set by Management for ${wallet.assetSymbol}.${sourceText}`,
+    description: `${customerLabel === 'RECEIVED' ? 'Received' : customerLabel === 'WALLET_DEBIT' ? 'Wallet debit' : 'Wallet balance updated'} ${wallet.assetSymbol}.${sourceText}`,
     meta: {
-      operation: 'BALANCE_SET', by: manager.email, reason, fundingSource: fundingSource || null,
+      operation: 'BALANCE_SET', by: manager.email, reason, fundingSource: fundingSource || null, customerLabel,
       previous: { available: wallet.available, reserved: wallet.reserved },
       target: { available: targetAvailable, reserved: targetReserved },
     },
     lines,
   });
 
-  const sourceNotice = fundingSource ? ` Credited by / source: ${fundingSource}.` : '';
-  await notifyUser(wallet.userId, 'SYSTEM', 'Wallet balance updated', `${wallet.assetSymbol} balance was set by Management. Available: ${targetAvailable}; reserved: ${targetReserved}. Reason: ${reason}.${sourceNotice}`);
+  const sourceNotice = fundingSource ? ` Source: ${fundingSource}.` : '';
+  await notifyUser(wallet.userId, 'SYSTEM', customerLabel === 'RECEIVED' ? `Received ${wallet.assetSymbol}` : customerLabel === 'WALLET_DEBIT' ? `Wallet debit ${wallet.assetSymbol}` : 'Wallet balance updated', `Available: ${targetAvailable}; reserved: ${targetReserved}. Reason: ${reason}.${sourceNotice}`);
   await audit(manager.id, manager.email, 'MANAGEMENT_WALLET_BALANCE_SET', `${wallet.user.email} ${wallet.assetSymbol}: available ${wallet.available}→${targetAvailable}, reserved ${wallet.reserved}→${targetReserved}; ${reason}; source=${fundingSource || '-'}`);
 
   return ok({

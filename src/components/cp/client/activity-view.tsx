@@ -24,7 +24,7 @@ interface ActivityItem {
   status: string;
   type: string;
   createdAt: string;
-  meta?: { fee?: number; txHash?: string; memo?: string; entries?: Array<{ direction: string; amount: number; symbol: string; before: number; after: number }>; corrections?: Array<{ note: string; reason: string; at: string }> };
+  meta?: { fee?: number; txHash?: string; memo?: string; fundingSource?: string; entries?: Array<{ direction: string; amount: number; symbol: string; before: number; after: number }>; corrections?: Array<{ note: string; reason: string; at: string }> };
 }
 
 const FILTERS = [
@@ -132,6 +132,7 @@ export function ActivityView() {
                 {selected.meta?.fee ? <Row label="Fee" value={fmtUsd(selected.meta.fee)} /> : null}
                 {selected.meta?.txHash && <Row label="Transaction hash" value={maskAddress(selected.meta.txHash)} />}
                 {selected.meta?.memo && <Row label="Memo" value={selected.meta.memo} />}
+                {selected.meta?.fundingSource && <Row label="Source" value={selected.meta.fundingSource} />}
               </div>
               {selected.meta?.entries && selected.meta.entries.length > 0 && (
                 <div className="mt-3">

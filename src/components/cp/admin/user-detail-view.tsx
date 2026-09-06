@@ -32,7 +32,7 @@ interface DetailData {
   transfers: Array<{ id: string; reference: string; kind: string; assetSymbol: string; amount: number; status: string; toAddress: string; memo: string | null; createdAt: string }>;
   deposits: Array<{ id: string; reference: string; assetSymbol: string; amount: number; method: string; status: string; note: string | null; sourceAddress: string | null; sourceReference: string | null; createdAt: string }>;
   withdrawals: Array<{ id: string; reference: string; assetSymbol: string; amount: number; status: string; address: string; note: string | null; createdAt: string }>;
-  ledgerTxs: Array<{ id: string; reference: string; type: string; status: string; description: string; meta: string; createdAt: string }>;
+  ledgerTxs: Array<{ id: string; reference: string; type: string; status: string; description: string; meta: string; createdAt: string; entries: Array<{ direction: string; assetSymbol: string; amount: number }> }>;
   securityEvents: Array<{ id: string; type: string; ip: string | null; createdAt: string }>;
   promos: Array<{ code: string; title: string; redeemedAt: string }>;
   transactionEdits: Array<{ id: string; recordType: string; recordId: string; changes: string; reason: string; editedBy: string; createdAt: string }>;
@@ -70,7 +70,7 @@ export function AdminUserDetailView() {
   const { data, loading, reload } = useFetch<DetailData>(`/api/admin/users/${id}`, [id]);
 
   const [adjustOpen, setAdjustOpen] = useState(false);
-  const [adjust, setAdjust] = useState({ symbol: 'USD', amount: '', direction: 'CREDIT', reason: '' });
+  const [adjust, setAdjust] = useState({ symbol: 'USD', amount: '', direction: 'CREDIT', customerLabel: 'RECEIVED', reason: '' });
   const [profileOpen, setProfileOpen] = useState(false);
   const [profile, setProfile] = useState({ name: '', email: '', loginId: '', phone: '', address: '', country: '', role: 'CUSTOMER', kycStatus: 'PENDING', kycTier: '1', password: '' });
   const [closeOpen, setCloseOpen] = useState(false);
@@ -88,7 +88,7 @@ export function AdminUserDetailView() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: id, symbol: adjust.symbol, direction: adjust.direction,
+          userId: id, symbol: adjust.symbol, direction: adjust.direction, customerLabel: adjust.customerLabel,
           amount: parseFloat(adjust.amount), reason: adjust.reason,
         }),
       });
@@ -97,7 +97,7 @@ export function AdminUserDetailView() {
       else {
         toast.success(d.message);
         setAdjustOpen(false);
-        setAdjust({ symbol: 'USD', amount: '', direction: 'CREDIT', reason: '' });
+        setAdjust({ symbol: 'USD', amount: '', direction: 'CREDIT', customerLabel: 'RECEIVED', reason: '' });
         reload();
       }
     } finally {
@@ -373,7 +373,7 @@ export function AdminUserDetailView() {
       </div>
       <div className="grid lg:grid-cols-2 gap-4">
         <HistoryCard title="Ledger transactions" rows={data.ledgerTxs.slice(0, 10).map((t) => ({
-          key: t.id, main: t.description, sub: `${t.reference} · ${fmtDateTime(t.createdAt)}`,
+          key: t.id, main: customerLedgerTitle(t), sub: `${t.reference} · ${fmtDateTime(t.createdAt)}`,
           right: <div className="flex items-center gap-1.5"><StatusPill status={t.status === 'POSTED' ? 'COMPLETED' : t.status} /><Button variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={() => openRecord({ id: t.id, kind: 'LEDGER', reference: t.reference, status: t.status })}><Pencil className="w-3 h-3 mr-1" /> Note</Button></div>,
         }))} />
         <HistoryCard title="Orders" rows={data.orders.slice(0, 10).map((o) => ({
@@ -415,7 +415,7 @@ export function AdminUserDetailView() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-[12.5px]">Direction</Label>
-                <Select value={adjust.direction} onValueChange={(v) => setAdjust({ ...adjust, direction: v })}>
+                <Select value={adjust.direction} onValueChange={(v) => setAdjust({ ...adjust, direction: v, customerLabel: v === 'CREDIT' ? 'RECEIVED' : 'WALLET_DEBIT' })}>
                   <SelectTrigger className="h-10 rounded-xl bg-secondary/60"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="CREDIT">Credit (add)</SelectItem>
@@ -432,6 +432,22 @@ export function AdminUserDetailView() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[12.5px]">Customer activity label</Label>
+              <Select value={adjust.customerLabel} onValueChange={(v) => setAdjust({ ...adjust, customerLabel: v })}>
+                <SelectTrigger className="h-10 rounded-xl bg-secondary/60"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {adjust.direction === 'CREDIT' ? <>
+                    <SelectItem value="RECEIVED">Received</SelectItem>
+                    <SelectItem value="WALLET_CREDIT">Wallet credit</SelectItem>
+                    <SelectItem value="BONUS_CREDIT">Bonus credit</SelectItem>
+                  </> : <>
+                    <SelectItem value="WALLET_DEBIT">Wallet debit</SelectItem>
+                    <SelectItem value="SERVICE_FEE">Service fee</SelectItem>
+                  </>}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label className="text-[12.5px]">Amount</Label>
@@ -541,6 +557,23 @@ export function AdminUserDetailView() {
       </Dialog>
     </div>
   );
+}
+
+function customerLedgerTitle(transaction: DetailData['ledgerTxs'][number]): string {
+  const symbol = transaction.entries[0]?.assetSymbol ?? '';
+  let label = '';
+  try {
+    const meta = JSON.parse(transaction.meta) as { customerLabel?: string };
+    label = meta.customerLabel ?? '';
+  } catch { /* legacy transaction metadata */ }
+  if (!label && transaction.type === 'ADJUSTMENT') {
+    label = transaction.entries.some((entry) => entry.direction === 'CREDIT') ? 'RECEIVED' : 'WALLET_DEBIT';
+  }
+  const words: Record<string, string> = {
+    RECEIVED: 'Received', WALLET_CREDIT: 'Wallet credit', BONUS_CREDIT: 'Bonus credit',
+    WALLET_DEBIT: 'Wallet debit', SERVICE_FEE: 'Service fee',
+  };
+  return words[label] ? `${words[label]}${symbol ? ` ${symbol}` : ''}` : transaction.description;
 }
 
 function HistoryCard({ title, rows }: { title: string; rows: Array<{ key: string; main: string; sub: string; right: React.ReactNode }> }) {
