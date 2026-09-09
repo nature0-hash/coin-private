@@ -76,7 +76,7 @@ export function ProfileView() {
               <Sparkles className="w-3.5 h-3.5 text-primary" /> Private tier
             </p>
             <p className="text-[19px] font-semibold tracking-tight mt-2">
-              {portfolio ? fmtUsd(portfolio.totalUsd, { compact: true }) : '-'} under management
+              {portfolio ? fmtUsd(portfolio.totalUsd, { compact: true }) : '-'} total portfolio value
             </p>
             <p className="text-[12.5px] text-muted-foreground mt-1">
               KYC {user?.kycStatus === 'VERIFIED' ? 'verified' : 'pending'} · Tier {user?.kycTier ?? 1} · {portfolio?.holdings.length ?? 0} wallets

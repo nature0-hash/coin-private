@@ -53,6 +53,12 @@ export function NotificationsView() {
     reload();
   }
 
+  async function deleteOne(id: string) {
+    await fetch('/api/notifications', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    reload();
+    toast.success('Notification deleted');
+  }
+
   return (
     <div className="space-y-5 max-w-[680px]">
       <div className="flex items-end justify-between">
@@ -81,9 +87,14 @@ export function NotificationsView() {
       ) : (
         <div className="space-y-2.5">
           {items.map((n) => (
-            <button
+            <div
               key={n.id}
               onClick={() => markOne(n.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') markOne(n.id);
+              }}
+              role="button"
+              tabIndex={0}
               className={cn(
                 'w-full cp-card p-4 flex items-start gap-3.5 text-left transition-colors hover:bg-hover',
                 !n.read && 'border-l-2 border-l-primary'
@@ -101,7 +112,18 @@ export function NotificationsView() {
                 <p className="text-[13px] text-muted-foreground mt-1 leading-relaxed">{n.body}</p>
                 <p className="text-[11.5px] text-muted-foreground/70 mt-1.5">{timeAgo(n.createdAt)}</p>
               </div>
-            </button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="shrink-0 h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                aria-label={`Delete notification: ${n.title}`}
+                title="Delete notification"
+                onClick={(event) => { event.stopPropagation(); deleteOne(n.id); }}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
           ))}
         </div>
       )}

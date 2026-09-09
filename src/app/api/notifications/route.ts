@@ -27,11 +27,16 @@ export const POST = handler(async (req: NextRequest) => {
   return ok({ success: true });
 });
 
-// DELETE: clear all
+// DELETE: remove one notification when an id is supplied, otherwise clear all.
 export const DELETE = handler(async (req: NextRequest) => {
   const user = await auth(req);
   if (!user) return ok({ success: false });
-  await db.notification.deleteMany({ where: { recipientId: user.id } });
+  const body = await req.json().catch(() => ({})) as { id?: string };
+  if (body.id) {
+    await db.notification.deleteMany({ where: { id: body.id, recipientId: user.id } });
+  } else {
+    await db.notification.deleteMany({ where: { recipientId: user.id } });
+  }
   return ok({ success: true });
 });
 
