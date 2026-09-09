@@ -173,7 +173,7 @@ export const PATCH = handler(async (req: NextRequest) => {
     await notifyUser(body.id, 'SYSTEM', 'Account restored', 'Your account has been reactivated. Welcome back.');
   }
   if (body.status === 'CLOSED') {
-    await notifyUser(body.id, 'SYSTEM', 'Account closed', `Your account was closed by Management. Reason: ${body.closeReason?.trim()}`);
+    await notifyUser(body.id, 'SYSTEM', 'Account closed', `Your account was closed by the platform team. Reason: ${body.closeReason?.trim()}`);
   }
   if (body.kycStatus === 'VERIFIED') {
     await notifyUser(body.id, 'SYSTEM', 'Identity verified', 'Your verification is complete: higher limits are now unlocked.');

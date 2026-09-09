@@ -2,10 +2,11 @@
 
 // ============================================================
 // Coin Private: Security center
-// Password change, two-factor toggle, login history.
+// Password change and customer-visible security history.
+// Removing a visible history row never deletes the internal
+// SecurityEvent/audit record.
 // ============================================================
 import { useState } from 'react';
-import { useAuth } from '@/lib/store';
 import { useFetch } from '@/hooks/use-cp-data';
 import { SkeletonBlock, StatusPill } from '@/components/cp/primitives';
 import { fmtDateTime } from '@/lib/format';
@@ -14,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { KeyRound, ShieldCheck, Lock } from 'lucide-react';
+import { KeyRound, ShieldCheck, Lock, Trash2 } from 'lucide-react';
 
 interface SecurityEventRow {
   id: string;
@@ -26,13 +27,14 @@ interface SecurityEventRow {
 }
 
 export function SecurityView() {
-  const { user } = useAuth();
   const { data, loading, reload } = useFetch<{ events: SecurityEventRow[] }>('/api/security');
 
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function changePassword() {
     if (next !== confirm) {
@@ -57,6 +59,50 @@ export function SecurityView() {
       toast.error('Network error');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function deleteEvent(id: string) {
+    setDeletingId(id);
+    try {
+      const res = await fetch('/api/security', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      const body = await res.json();
+      if (!res.ok || body.error) {
+        toast.error(body.error ?? 'Could not remove security event');
+        return;
+      }
+      toast.success('Security event removed');
+      reload();
+    } catch {
+      toast.error('Network error');
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function clearEvents() {
+    setClearing(true);
+    try {
+      const res = await fetch('/api/security', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true }),
+      });
+      const body = await res.json();
+      if (!res.ok || body.error) {
+        toast.error(body.error ?? 'Could not clear security activity');
+        return;
+      }
+      toast.success('Security activity cleared');
+      reload();
+    } catch {
+      toast.error('Network error');
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -113,7 +159,20 @@ export function SecurityView() {
 
       {/* history */}
       <div>
-        <h2 className="text-[16px] font-semibold tracking-tight mb-3">Recent security events</h2>
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h2 className="text-[16px] font-semibold tracking-tight">Recent security events</h2>
+          {!!data?.events.length && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="rounded-full gap-1.5 text-[12px] text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+              onClick={clearEvents}
+              disabled={clearing}
+            >
+              <Trash2 className="w-3.5 h-3.5" /> {clearing ? 'Clearing…' : 'Clear all'}
+            </Button>
+          )}
+        </div>
         {loading && !data ? (
           <div className="cp-card p-4 space-y-3">{[1, 2, 3].map((i) => <SkeletonBlock key={i} className="h-10" />)}</div>
         ) : !data?.events.length ? (
@@ -138,6 +197,18 @@ export function SecurityView() {
                   </p>
                 </div>
                 <span className="text-[11.5px] text-muted-foreground shrink-0">{fmtDateTime(e.createdAt)}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-lg shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  aria-label="Delete security event"
+                  title="Delete security event"
+                  disabled={deletingId === e.id}
+                  onClick={() => deleteEvent(e.id)}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
               </div>
             ))}
           </div>

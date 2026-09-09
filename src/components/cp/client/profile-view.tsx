@@ -75,8 +75,11 @@ export function ProfileView() {
             <p className="micro-label flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-primary" /> Private tier
             </p>
-            <p className="text-[19px] font-semibold tracking-tight mt-2">
-              {portfolio ? fmtUsd(portfolio.totalUsd, { compact: true }) : '-'} total portfolio value
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground mt-2">
+              Total portfolio value
+            </p>
+            <p className="text-[25px] leading-none font-semibold tracking-tight mt-1 nums">
+              {portfolio ? fmtUsd(portfolio.totalUsd, { compact: true }) : '-'}
             </p>
             <p className="text-[12.5px] text-muted-foreground mt-1">
               KYC {user?.kycStatus === 'VERIFIED' ? 'verified' : 'pending'} · Tier {user?.kycTier ?? 1} · {portfolio?.holdings.length ?? 0} wallets

@@ -74,7 +74,7 @@ export function NotificationsView() {
               </Button>
             )}
             <Button variant="ghost" size="sm" className="rounded-full gap-1.5 text-[12.5px] text-muted-foreground hover:text-destructive" onClick={clearAll}>
-              <Trash2 className="w-4 h-4" /> Clear
+              <Trash2 className="w-4 h-4" /> Clear all
             </Button>
           </div>
         )}

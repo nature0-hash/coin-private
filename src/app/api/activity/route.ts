@@ -1,29 +1,43 @@
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { requireAuth, handler, ok } from '@/lib/api';
+import { requireAuth, handler, ok, readJson } from '@/lib/api';
 
 // GET /api/activity: unified activity feed for the signed-in user.
 // Merges orders, transfers, deposits, withdrawals and ledger entries.
+// Customer-hidden items are omitted without deleting the underlying records.
 export const GET = handler(async (req: NextRequest) => {
   const user = await requireAuth(req);
   const url = new URL(req.url);
   const filter = url.searchParams.get('filter') ?? 'all';
 
+  const hidden = await db.customerHiddenItem.findMany({
+    where: { userId: user.id, area: 'ACTIVITY' },
+    select: { itemId: true },
+  });
+  const hiddenIds = hidden.map((item) => item.itemId);
+  const rawHidden = (prefix: string) => hiddenIds.filter((id) => id.startsWith(prefix)).map((id) => id.slice(prefix.length));
+
+  const hiddenOrders = rawHidden('ord-');
+  const hiddenTransfers = rawHidden('trf-');
+  const hiddenDeposits = rawHidden('dep-');
+  const hiddenWithdrawals = rawHidden('wdr-');
+  const hiddenLedger = rawHidden('ldg-');
+
   const [orders, transfers, deposits, withdrawals, ledgerTxs] = await Promise.all([
     filter === 'all' || filter === 'trades'
-      ? db.order.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: 60 })
+      ? db.order.findMany({ where: { userId: user.id, ...(hiddenOrders.length ? { id: { notIn: hiddenOrders } } : {}) }, orderBy: { createdAt: 'desc' }, take: 60 })
       : Promise.resolve([]),
     filter === 'all' || filter === 'transfers'
-      ? db.transfer.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: 60 })
+      ? db.transfer.findMany({ where: { userId: user.id, ...(hiddenTransfers.length ? { id: { notIn: hiddenTransfers } } : {}) }, orderBy: { createdAt: 'desc' }, take: 60 })
       : Promise.resolve([]),
     filter === 'all' || filter === 'deposits'
-      ? db.depositRequest.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: 60 })
+      ? db.depositRequest.findMany({ where: { userId: user.id, ...(hiddenDeposits.length ? { id: { notIn: hiddenDeposits } } : {}) }, orderBy: { createdAt: 'desc' }, take: 60 })
       : Promise.resolve([]),
     filter === 'all' || filter === 'withdrawals'
-      ? db.withdrawalRequest.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: 60 })
+      ? db.withdrawalRequest.findMany({ where: { userId: user.id, ...(hiddenWithdrawals.length ? { id: { notIn: hiddenWithdrawals } } : {}) }, orderBy: { createdAt: 'desc' }, take: 60 })
       : Promise.resolve([]),
     filter === 'all' || filter === 'ledger'
-      ? db.ledgerTransaction.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: 100, include: { entries: true } })
+      ? db.ledgerTransaction.findMany({ where: { userId: user.id, ...(hiddenLedger.length ? { id: { notIn: hiddenLedger } } : {}) }, orderBy: { createdAt: 'desc' }, take: 100, include: { entries: true } })
       : Promise.resolve([]),
   ]);
 
@@ -108,6 +122,21 @@ export const GET = handler(async (req: NextRequest) => {
 
   items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   return ok({ items: items.slice(0, 120) });
+});
+
+// DELETE /api/activity: hide selected records from this customer's Activity view.
+// This does not delete or modify any transaction, ledger or Management record.
+export const DELETE = handler(async (req: NextRequest) => {
+  const user = await requireAuth(req);
+  const body = await readJson<{ ids?: string[] }>(req);
+  const ids = Array.from(new Set((body.ids ?? []).filter((id) => typeof id === 'string' && /^(ord|trf|dep|wdr|ldg)-/.test(id)))).slice(0, 120);
+  if (!ids.length) return ok({ error: 'Select at least one activity item' }, { status: 422 });
+
+  await db.customerHiddenItem.createMany({
+    data: ids.map((itemId) => ({ userId: user.id, area: 'ACTIVITY', itemId })),
+    skipDuplicates: true,
+  });
+  return ok({ success: true, hidden: ids.length });
 });
 
 export const runtime = 'nodejs';

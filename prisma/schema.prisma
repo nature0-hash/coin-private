@@ -51,6 +51,7 @@ model User {
   approvals        Approval[]
   welcomeMatch     WelcomeMatchProgress?
   transactionEdits TransactionEditLog[]
+  hiddenCustomerItems CustomerHiddenItem[]
 }
 
 // ------------------------- Assets ---------------------------
@@ -354,6 +355,23 @@ model SecurityEvent {
   userAgent String?
   detail    String?
   createdAt DateTime @default(now())
+}
+
+
+// -------- Customer-visible history preferences --------
+// Hides records only from the customer-facing Activity/Security lists.
+// The underlying financial, security and audit records remain untouched and
+// continue to be available to Management/internal controls.
+model CustomerHiddenItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  area      String   // ACTIVITY | SECURITY
+  itemId    String   // customer-feed id (e.g. ord-...) or SecurityEvent.id
+  createdAt DateTime @default(now())
+
+  @@unique([userId, area, itemId])
+  @@index([userId, area])
 }
 
 // ----------------------- Watchlist ---------------------------
